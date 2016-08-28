@@ -1,0 +1,146 @@
+---
+title: "Practical Machine Learning Capstone Project - Activity"
+author: "Naresh Neelakantan"
+date: "August 27, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction and Background
+  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+The goal of the project to create a model from data taken from the HAR (Human Activity Recognition) project and predict the form of exercises done. 
+
+## Libraries
+
+Importing required libraries in this section.
+
+```{r activity}
+library(caret)
+library(MASS)
+library(rpart)
+library(rpart.plot)
+library(gbm)
+library(plyr)
+library(randomForest)
+library(mgcv)
+library(nlme)
+
+
+```
+
+## Data extraction and cleansing
+
+Data is extracted from given urls and cleansed so that all "DIV/0", "NA" and other non numericals are removed.
+
+```{r activity1}
+trainRaw <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),na.strings=c('#DIV/0', '', 'NA') ,stringsAsFactors = F)
+testRaw <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),na.strings=c('#DIV/0', '', 'NA') ,stringsAsFactors = F)
+sum(complete.cases(trainRaw))
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0] 
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0] 
+classe <- trainRaw$classe
+trainRemove <- grepl("^X|timestamp|window", names(trainRaw))
+trainRaw <- trainRaw[, !trainRemove]
+trainCleaned <- trainRaw[, sapply(trainRaw, is.numeric)]
+trainCleaned$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(testRaw))
+testRaw <- testRaw[, !testRemove]
+testCleaned <- testRaw[, sapply(testRaw, is.numeric)]
+
+```
+
+
+## Actual Training and Validation Data builds
+
+Splicing the data sets to training and validation sets.
+
+```{r activity2}
+set.seed(96780)
+inTrain <- createDataPartition(trainCleaned$classe, p=0.70, list=F)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[-inTrain, ]
+ctrl <- trainControl(method = "cv")
+```
+
+## Linear Discriminant Analysis
+
+We fit an LDA model with accel_arm_x removed and see the accuracy result.
+
+```{r activity3}
+fit.lda <- train(classe ~ . -accel_arm_x,
+             method = "lda",
+             trControl = ctrl,
+             data = trainData)
+pred.lda <- predict(fit.lda, newdata = testData)
+confusionMatrix(pred.lda, testData$classe)$overall[1]
+```
+
+## Decision Tree
+
+We fit a Decision Tree and see the accuracy result.
+
+```{r activity4}
+set.seed(97680)
+fit.cart <- train(classe ~ .,
+            method = "rpart",
+            trControl = ctrl,
+            data = trainData)
+pred.cart <- predict(fit.cart, newdata = testData)
+confusionMatrix(pred.cart, testData$classe)$overall[1]
+
+```
+
+## Boosted Decision Trees
+
+We fit a boosted decision tree and see the accuracy result.
+
+```{r activity5}
+set.seed(98760)
+fit.gbm <- train(classe ~ .,
+             method = "gbm",
+             data = trainData,
+             trControl = ctrl,
+             verbose = F)
+pred.gbm <- predict(fit.gbm, newdata = testData)
+confusionMatrix(pred.gbm, testData$classe)$overall[1]
+```
+## Random Forests
+
+We fit random forests and see the accuracy result.
+
+```{r activity6}
+set.seed(98670)
+fit.rf <- train(classe ~ ., 
+            method = "rf",
+            data = trainData, 
+            trControl = ctrl,
+            importance = T)
+pred.rf <- predict(fit.rf, newdata = testData)
+confusionMatrix(pred.rf, testData$classe)$overall[1]
+```
+
+## Combining Predictors
+
+We combine all predictors and see if there is any improvement in accuracy result.
+
+```{r activity7}
+set.seed(89760)
+predDF <- data.frame(pred.cart,pred.gbm,pred.lda,pred.rf,classe = testData$classe)
+combModFit <- train(classe ~.,method = "gam",data = predDF)
+combPred <- predict(combModFit,predDF)
+confusionMatrix(combPred, testData$classe)$overall[1]
+```
+## Predicting Test Data with best trained method (random forest)
+
+Finally we predict the sequence of activity on the original test samples with the best accurate method from above.
+
+```{r activity8}
+result <- predict(fit.rf, testCleaned[, -length(names(testCleaned))])
+result
+```
+
